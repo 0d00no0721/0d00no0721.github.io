@@ -15,6 +15,7 @@
         }
         .container { max-width: 800px; margin: 0 auto; }
         h1 { font-size: 28px; font-weight: 700; margin-bottom: 24px; }
+
         a.link {
             display: block;
             color: #667eea;
@@ -25,14 +26,114 @@
             border-radius: 12px;
             border: 1px solid #2a2a4a;
             transition: border-color 0.2s;
+            margin-bottom: 32px;
         }
         a.link:hover { border-color: #667eea; }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .btn-group { margin-bottom: 16px; }
+        .btn-detect {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            background: #667eea;
+            color: #fff;
+            transition: background 0.2s;
+        }
+        .btn-detect:hover { background: #5a6fd6; }
+        .btn-detect:disabled { background: #444; color: #888; cursor: not-allowed; }
+
+        .result-row {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            padding: 10px 16px;
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+        .result-row .r-model { font-weight: 500; min-width: 200px; }
+        .result-row .r-status { flex: 1; word-break: break-all; }
+        .result-row .r-status.ok { color: #4caf50; }
+        .result-row .r-status.fail { color: #f44336; }
+        .result-row .r-status.pending { color: #ff9800; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>0d00no0721</h1>
         <a class="link" href="/ideas">Ideas - 我的想法</a>
+
+        <div class="section-title">一键检测 API 连通性</div>
+        <div class="btn-group">
+            <button class="btn-detect" id="btnCheckAll" onclick="checkAll()">一键检测所有</button>
+        </div>
+        <div id="results"></div>
     </div>
+
+    <script>
+        const WORKER_URL = 'https://miaomiatools.shigan2006.workers.dev'
+        const MODELS = [
+            { provider: 'deepseek', model: 'deepseek-v4-flash', label: 'DeepSeek 官方 / deepseek-v4-flash' },
+            { provider: 'ustc', model: 'deepseek-v4-pro', label: 'USTC / deepseek-v4-pro' },
+            { provider: 'ustc', model: 'deepseek-v4-flash-ascend', label: 'USTC / deepseek-v4-flash-ascend' },
+            { provider: 'ustc', model: 'qwen3.6-reasoner', label: 'USTC / qwen3.6-reasoner' },
+            { provider: 'ustc', model: 'qwen3.6-chat', label: 'USTC / qwen3.6-chat' },
+        ]
+
+        async function testOne(provider, model, statusEl) {
+            const start = Date.now()
+            statusEl.className = 'r-status pending'
+            statusEl.textContent = '测试中...'
+            try {
+                const resp = await fetch(WORKER_URL + '/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        provider, model,
+                        messages: [{ role: 'system', content: '请用一句话回复。' }, { role: 'user', content: '你好' }]
+                    })
+                })
+                const elapsed = Date.now() - start
+                const data = await resp.json()
+                if (!resp.ok) { throw new Error(`${resp.status}: ${data.error || JSON.stringify(data)}`) }
+                const reply = data.choices?.[0]?.message?.content || '(无回复)'
+                const truncated = reply.length > 60 ? reply.slice(0, 60) + '...' : reply
+                statusEl.className = 'r-status ok'
+                statusEl.textContent = `✅ ${elapsed}ms — ${truncated}`
+            } catch (err) {
+                statusEl.className = 'r-status fail'
+                statusEl.textContent = `❌ ${err.message}`
+            }
+        }
+
+        async function checkAll() {
+            const btn = document.getElementById('btnCheckAll')
+            const container = document.getElementById('results')
+            btn.disabled = true
+            container.innerHTML = ''
+            const rows = []
+            for (const m of MODELS) {
+                const row = document.createElement('div')
+                row.className = 'result-row'
+                row.innerHTML = `<span class="r-model">${m.label}</span><span class="r-status pending">排队中...</span>`
+                container.appendChild(row)
+                rows.push({ el: row.querySelector('.r-status'), provider: m.provider, model: m.model })
+            }
+            await Promise.all(rows.map(r => testOne(r.provider, r.model, r.el)))
+            btn.disabled = false
+        }
+    </script>
 </body>
 </html>
