@@ -87,13 +87,19 @@
     <script>
         const WORKER_URL = 'https://miaomiatools.shigan2006.workers.dev'
 
-        const PRIORITY = [
-            { provider: 'ustc', model: 'deepseek-v4-flash-ascend' },
-            { provider: 'ustc', model: 'qwen3.6-chat' },
-            { provider: 'ustc', model: 'qwen3.6-reasoner' },
+        const PRIORITY_KEY = 'api_priority'
+        const DEFAULT_PRIORITY = [
             { provider: 'ustc', model: 'deepseek-v4-pro' },
+            { provider: 'ustc', model: 'deepseek-v4-flash-ascend' },
+            { provider: 'ustc', model: 'qwen3.6-reasoner' },
+            { provider: 'ustc', model: 'qwen3.6-chat' },
             { provider: 'deepseek', model: 'deepseek-v4-flash' },
         ]
+        function getPriority() {
+            const saved = localStorage.getItem(PRIORITY_KEY)
+            if (saved) { try { return JSON.parse(saved) } catch {} }
+            return DEFAULT_PRIORITY
+        }
 
         const BIBLE_BASE_PROMPT = `你是圣经文体转换器。你的任务是将输入的中文改写为符合中文 NET 圣经（简体版）的语体，内容不变，仅转换语气、用词、句式和排版。
 
@@ -450,7 +456,7 @@
 
         async function callAPI(messages, maxTokens) {
             let lastError = null
-            for (const { provider, model } of PRIORITY) {
+            for (const { provider, model } of getPriority()) {
                 try {
                     const resp = await fetch(WORKER_URL + '/api/chat', {
                         method: 'POST',

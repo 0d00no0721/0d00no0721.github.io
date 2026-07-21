@@ -89,13 +89,19 @@
     <script>
         const WORKER_URL = 'https://miaomiatools.shigan2006.workers.dev'
 
-        const PRIORITY = [
-            { provider: 'ustc', model: 'deepseek-v4-flash-ascend' },
-            { provider: 'ustc', model: 'qwen3.6-chat' },
-            { provider: 'ustc', model: 'qwen3.6-reasoner' },
+        const PRIORITY_KEY = 'api_priority'
+        const DEFAULT_PRIORITY = [
             { provider: 'ustc', model: 'deepseek-v4-pro' },
+            { provider: 'ustc', model: 'deepseek-v4-flash-ascend' },
+            { provider: 'ustc', model: 'qwen3.6-reasoner' },
+            { provider: 'ustc', model: 'qwen3.6-chat' },
             { provider: 'deepseek', model: 'deepseek-v4-flash' },
         ]
+        function getPriority() {
+            const saved = localStorage.getItem(PRIORITY_KEY)
+            if (saved) { try { return JSON.parse(saved) } catch {} }
+            return DEFAULT_PRIORITY
+        }
 
         const ZHOULI_SYSTEM_PROMPT = `你是"大周礼时代"评论区的优秀文案作者。你的任务是把用户的现代中文，改写成近期中文互联网流行的"合乎周礼"白话翻译腔。\n\n这个风格的特点是：\n- 好像"文言文的白话翻译"，把现代词汇替换为文雅的古风说法\n- 添加"乎"、"兮"、"之"等语气助词，模仿文言文表达\n- 用"子""卿""吾""汝"替换"你""我"\n- 句式半文半白，但整体易于理解\n- 保持原意，只转换语气用词和句式，不改变原意内容\n- 须使用中文标点符号，不得使用西文标点\n\n以下为示例：\n\n输入：我今天吃了饭，还不错\n输出：吾今餐毕，甚佳。\n\n输入：你为什么要这样做？\n输出：卿何以故而行此乎？`
 
@@ -103,7 +109,7 @@
 
         async function callAPI(messages, maxTokens) {
             let lastError = null
-            for (const { provider, model } of PRIORITY) {
+            for (const { provider, model } of getPriority()) {
                 try {
                     const resp = await fetch(WORKER_URL + '/api/chat', {
                         method: 'POST',

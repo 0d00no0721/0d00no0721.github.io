@@ -30,7 +30,7 @@
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 20px;
-            margin-bottom: 48px;
+            margin-bottom: 40px;
         }
         .card {
             background: #1a1a2e;
@@ -53,6 +53,40 @@
         .card .name { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
         .card .desc { font-size: 13px; color: #888; }
 
+        .section-title {
+            font-size: 20px; font-weight: 600; margin-bottom: 16px;
+            padding-bottom: 8px; border-bottom: 1px solid #2a2a4a;
+        }
+        .test-header {
+            display: flex; align-items: center; gap: 16px; margin-bottom: 16px;
+        }
+        .btn-detect {
+            padding: 10px 24px; border: none; border-radius: 8px;
+            font-size: 15px; font-weight: 600; cursor: pointer;
+            background: #667eea; color: #fff; transition: background 0.2s;
+        }
+        .btn-detect:hover { background: #5a6fd6; }
+        .btn-detect:disabled { background: #444; color: #888; cursor: not-allowed; }
+
+        .priority-info {
+            font-size: 13px; color: #888;
+            padding: 8px 14px; background: #1a1a2e;
+            border: 1px solid #2a2a4a; border-radius: 8px;
+        }
+        .priority-info strong { color: #667eea; }
+
+        .result-row {
+            display: flex; align-items: baseline; gap: 12px;
+            padding: 10px 16px; background: #1a1a2e;
+            border: 1px solid #2a2a4a; border-radius: 8px;
+            margin-bottom: 6px; font-size: 13px;
+        }
+        .result-row .r-model { font-weight: 500; min-width: 200px; }
+        .result-row .r-status { flex: 1; word-break: break-all; }
+        .result-row .r-status.ok { color: #4caf50; }
+        .result-row .r-status.fail { color: #f44336; }
+        .result-row .r-status.pending { color: #ff9800; }
+
         @media (max-width: 640px) {
             .cards { grid-template-columns: 1fr; }
         }
@@ -63,6 +97,7 @@
         <a class="back" href="/ideas">&larr; 返回奇思妙想</a>
         <h1>语言模拟器</h1>
         <p class="subtitle">选择一种语言风格</p>
+
         <div class="cards">
             <a class="card" href="/ideas/sim/yau/">
                 <div class="icon">📐</div>
@@ -80,6 +115,128 @@
                 <div class="desc">将文本改写为中文 NET 圣经风格</div>
             </a>
         </div>
+
+        <div class="section-title">API 连通性检测</div>
+        <div class="test-header">
+            <button class="btn-detect" id="btnCheckAll" onclick="checkAll()">一键检测所有</button>
+            <div id="priorityDisplay" class="priority-info">尚未检测</div>
+        </div>
+        <div id="results"></div>
     </div>
+
+    <script>
+        const WORKER_URL = 'https://miaomiatools.shigan2006.workers.dev'
+        const ALL_MODELS = [
+            { provider: 'deepseek', model: 'deepseek-v4-flash', label: 'DeepSeek 官方 / deepseek-v4-flash' },
+            { provider: 'ustc', model: 'deepseek-v4-pro', label: 'USTC / deepseek-v4-pro' },
+            { provider: 'ustc', model: 'deepseek-v4-flash-ascend', label: 'USTC / deepseek-v4-flash-ascend' },
+            { provider: 'ustc', model: 'qwen3.6-reasoner', label: 'USTC / qwen3.6-reasoner' },
+            { provider: 'ustc', model: 'qwen3.6-chat', label: 'USTC / qwen3.6-chat' },
+        ]
+        const PRIORITY_KEY = 'api_priority'
+
+        function updatePriorityDisplay() {
+            const el = document.getElementById('priorityDisplay')
+            const saved = localStorage.getItem(PRIORITY_KEY)
+            if (!saved) {
+                el.innerHTML = '尚未检测，建议先执行一键检测'
+                return
+            }
+            try {
+                const list = JSON.parse(saved)
+                const labels = list.map(p => p.model).join(' → ')
+                el.innerHTML = `<strong>当前优先级:</strong> ${labels}`
+            } catch {
+                el.innerHTML = '数据异常，请重新检测'
+            }
+        }
+
+        async function testOne(provider, model, statusEl) {
+            const start = Date.now()
+            statusEl.className = 'r-status pending'
+            statusEl.textContent = '测试中...'
+            try {
+                const resp = await fetch(WORKER_URL + '/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        provider, model,
+                        messages: [{ role: 'system', content: '请用一句话回复。' }, { role: 'user', content: '你好' }]
+                    })
+                })
+                const elapsed = Date.now() - start
+                const data = await resp.json()
+                if (!resp.ok) { throw new Error(`${resp.status}: ${data.error || JSON.stringify(data)}`) }
+                const reply = data.choices?.[0]?.message?.content || '(无回复)'
+                const truncated = reply.length > 60 ? reply.slice(0, 60) + '...' : reply
+                statusEl.className = 'r-status ok'
+                return { ok: true, elapsed, provider, model }
+            } catch (err) {
+                statusEl.className = 'r-status fail'
+                statusEl.textContent = `❌ ${err.message}`
+                return { ok: false, provider, model }
+            }
+        }
+
+        async function checkAll() {
+            const btn = document.getElementById('btnCheckAll')
+            const container = document.getElementById('results')
+            btn.disabled = true
+            container.innerHTML = ''
+
+            const rows = []
+            for (const m of ALL_MODELS) {
+                const row = document.createElement('div')
+                row.className = 'result-row'
+                row.innerHTML = `<span class="r-model">${m.label}</span><span class="r-status pending">排队中...</span>`
+                container.appendChild(row)
+                rows.push({
+                    el: row.querySelector('.r-status'),
+                    provider: m.provider,
+                    model: m.model,
+                    label: m.label
+                })
+            }
+
+            const results = await Promise.all(rows.map(r => testOne(r.provider, r.model, r.el)))
+
+            const okResults = results
+                .filter(r => r.ok)
+                .sort((a, b) => a.elapsed - b.elapsed)
+
+            const deepseekFallback = okResults.find(r => r.provider === 'deepseek')
+            const ustcResults = okResults.filter(r => r.provider === 'ustc')
+
+            const priority = [...ustcResults, deepseekFallback].filter(Boolean).map(r => ({
+                provider: r.provider,
+                model: r.model
+            }))
+
+            if (priority.length > 0) {
+                localStorage.setItem(PRIORITY_KEY, JSON.stringify(priority))
+                const modelNames = priority.map(p => p.model).join(' → ')
+                const elapsedMsgs = priority.map(p => {
+                    const r = okResults.find(r => r.provider === p.provider && r.model === p.model)
+                    return r ? `${p.model}(${r.elapsed}ms)` : p.model
+                }).join(' → ')
+                updatePriorityDisplay()
+                const infoRow = document.createElement('div')
+                infoRow.className = 'result-row'
+                infoRow.style.borderColor = '#4caf50'
+                infoRow.innerHTML = `<span class="r-model" style="color:#4caf50">✅ 检测完成</span><span class="r-status ok">优先级已设置: ${elapsedMsgs}</span>`
+                container.appendChild(infoRow)
+            } else {
+                const infoRow = document.createElement('div')
+                infoRow.className = 'result-row'
+                infoRow.style.borderColor = '#f44336'
+                infoRow.innerHTML = `<span class="r-model" style="color:#f44336">❌ 无可用模型</span><span class="r-status fail">所有 API 均不可用，请检查 Worker 或网络</span>`
+                container.appendChild(infoRow)
+            }
+
+            btn.disabled = false
+        }
+
+        updatePriorityDisplay()
+    </script>
 </body>
 </html>
