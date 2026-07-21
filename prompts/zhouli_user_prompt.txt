@@ -1,0 +1,23 @@
+================================================================================
+ 周礼 — User Prompt 模板
+================================================================================
+ 来源: command_handler.py:655
+ 调用方式: call_zhouli_api(text, ...) 中的 user message
+
+模板:
+  请将下面这句话改写得合乎周礼：
+  <原话>
+  {用户输入的文字}
+  </原话>
+
+
+API 请求 payload（command_handler.py:651-658）:
+  {
+      "model": <primary: deepseek-v4-pro | fallback: deepseek-chat>,
+      "messages": [
+          {"role": "system", "content": <ZHOULI_SYSTEM_PROMPT>},
+          {"role": "user", "content": "请将下面这句话改写得合乎周礼：\n<原话>\n{text}\n</原话>"},
+      ],
+      "max_tokens": 300,
+      "temperature": 0.9,
+  }

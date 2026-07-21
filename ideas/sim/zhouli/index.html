@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>周礼模拟器 - 正在开发中</title>
+    <title>周礼 - 语言模拟器</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -11,21 +11,144 @@
             background: #0f0f1a;
             color: #e0e0e0;
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-            gap: 20px;
+            padding: 40px 20px;
         }
-        h1 { font-size: 36px; background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        p { color: #888; font-size: 16px; }
-        a { color: #667eea; text-decoration: none; font-size: 14px; }
-        a:hover { text-decoration: underline; }
+        .container { max-width: 700px; margin: 0 auto; }
+        h1 {
+            font-size: 28px; font-weight: 700; margin-bottom: 4px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle { color: #888; margin-bottom: 24px; font-size: 14px; }
+        a.back {
+            display: inline-block; color: #667eea; text-decoration: none; font-size: 14px; margin-bottom: 20px;
+        }
+        a.back:hover { text-decoration: underline; }
+
+        textarea {
+            width: 100%;
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 8px;
+            padding: 14px;
+            color: #e0e0e0;
+            font-size: 14px;
+            resize: vertical;
+            font-family: inherit;
+            margin-bottom: 12px;
+        }
+        .btn-input-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .btn-input-row button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: #fff;
+        }
+        .btn-primary:hover { background: #5a6fd6; }
+        .btn-primary:disabled { background: #444; color: #888; cursor: not-allowed; }
+
+        .result-box {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 12px;
+            padding: 20px;
+            min-height: 120px;
+            font-size: 14px;
+            line-height: 1.7;
+        }
+        .status-msg { font-size: 13px; color: #888; margin-top: 8px; }
     </style>
 </head>
 <body>
-    <h1>周礼</h1>
-    <p>正在开发中，敬请期待</p>
-    <a href="/ideas/sim/">&larr; 返回语言模拟器</a>
+    <div class="container">
+        <a class="back" href="/ideas/sim/">&larr; 返回语言模拟器</a>
+        <h1>周礼</h1>
+        <p class="subtitle">将现代中文改写成"合乎周礼"腔调</p>
+
+        <textarea id="inputText" rows="5" placeholder="输入你要改写为周礼的文字..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();rewrite();}"></textarea>
+        <div class="btn-input-row">
+            <button class="btn btn-primary" id="btnRewrite" onclick="rewrite()">改写</button>
+        </div>
+
+        <div class="result-box" id="resultBox">等待输入...</div>
+        <div class="status-msg" id="statusMsg"></div>
+    </div>
+
+    <script>
+        const WORKER_URL = 'https://miaomiatools.shigan2006.workers.dev'
+
+        const PRIORITY = [
+            { provider: 'ustc', model: 'deepseek-v4-pro' },
+            { provider: 'ustc', model: 'deepseek-v4-flash-ascend' },
+            { provider: 'ustc', model: 'qwen3.6-reasoner' },
+            { provider: 'ustc', model: 'qwen3.6-chat' },
+            { provider: 'deepseek', model: 'deepseek-v4-flash' },
+        ]
+
+        const ZHOULI_SYSTEM_PROMPT = `你是"大周礼时代"评论区的优秀文案作者。你的任务是把用户的现代中文，改写成近期中文互联网流行的"合乎周礼"白话翻译腔。\n\n这个风格的特点是：\n- 好像"文言文的白话翻译"，把现代词汇替换为文雅的古风说法\n- 添加"乎"、"兮"、"之"等语气助词，模仿文言文表达\n- 用"子""卿""吾""汝"替换"你""我"\n- 句式半文半白，但整体易于理解\n- 保持原意，只转换语气用词和句式，不改变原意内容\n- 须使用中文标点符号，不得使用西文标点\n\n以下为示例：\n\n输入：我今天吃了饭，还不错\n输出：吾今餐毕，甚佳。\n\n输入：你为什么要这样做？\n输出：卿何以故而行此乎？`
+
+        const ZHOULI_USER_TEMPLATE = '请将下面这句话改写得合乎周礼：\n<原话>\n{input}\n</原话>'
+
+        async function callAPI(messages, maxTokens) {
+            let lastError = null
+            for (const { provider, model } of PRIORITY) {
+                try {
+                    const resp = await fetch(WORKER_URL + '/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ provider, model, messages }),
+                        signal: AbortSignal.timeout(30000)
+                    })
+                    if (!resp.ok) {
+                        const data = await resp.json()
+                        throw new Error(data.error || `HTTP ${resp.status}`)
+                    }
+                    return await resp.json()
+                } catch (err) {
+                    lastError = err
+                }
+            }
+            throw lastError
+        }
+
+        async function rewrite() {
+            const input = document.getElementById('inputText').value.trim()
+            if (!input) return
+            const btn = document.getElementById('btnRewrite')
+            const statusMsg = document.getElementById('statusMsg')
+            const resultBox = document.getElementById('resultBox')
+
+            btn.disabled = true
+            statusMsg.textContent = '改写中...'
+
+            const userPrompt = ZHOULI_USER_TEMPLATE.replace('{input}', input)
+
+            try {
+                const data = await callAPI([
+                    { role: 'system', content: ZHOULI_SYSTEM_PROMPT },
+                    { role: 'user', content: userPrompt }
+                ], 500)
+                const reply = data.choices?.[0]?.message?.content || '(无回复)'
+                resultBox.textContent = reply
+                statusMsg.textContent = ''
+            } catch (err) {
+                statusMsg.textContent = '错误: ' + err.message
+            } finally {
+                btn.disabled = false
+            }
+        }
+    </script>
 </body>
 </html>

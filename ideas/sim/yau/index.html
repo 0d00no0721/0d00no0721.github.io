@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>粤语模拟器 - 正在开发中</title>
+    <title>丘成桐 (Yau) - 语言模拟器</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -11,21 +11,245 @@
             background: #0f0f1a;
             color: #e0e0e0;
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-            gap: 20px;
+            padding: 40px 20px;
         }
-        h1 { font-size: 36px; background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        p { color: #888; font-size: 16px; }
-        a { color: #667eea; text-decoration: none; font-size: 14px; }
-        a:hover { text-decoration: underline; }
+        .container { max-width: 700px; margin: 0 auto; }
+        h1 {
+            font-size: 28px; font-weight: 700; margin-bottom: 4px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle { color: #888; margin-bottom: 24px; font-size: 14px; }
+        a.back {
+            display: inline-block; color: #667eea; text-decoration: none; font-size: 14px; margin-bottom: 20px;
+        }
+        a.back:hover { text-decoration: underline; }
+
+        .chat-box {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .chat-box .msg {
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .chat-box .msg.user {
+            background: #2a2a4a;
+            text-align: right;
+        }
+        .chat-box .msg.bot {
+            background: #1e2a3a;
+            border-left: 3px solid #667eea;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 10px;
+        }
+        .input-row textarea {
+            flex: 1;
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 8px;
+            padding: 12px;
+            color: #e0e0e0;
+            font-size: 14px;
+            resize: none;
+            font-family: inherit;
+        }
+        .input-row button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            background: #667eea;
+            color: #fff;
+            transition: background 0.2s;
+        }
+        .input-row button:hover { background: #5a6fd6; }
+        .input-row button:disabled { background: #444; color: #888; cursor: not-allowed; }
+
+        .status-msg { font-size: 13px; color: #888; margin-top: 8px; }
     </style>
 </head>
 <body>
-    <h1>粤语 (Yau)</h1>
-    <p>正在开发中，敬请期待</p>
-    <a href="/ideas/sim/">&larr; 返回语言模拟器</a>
+    <div class="container">
+        <a class="back" href="/ideas/sim/">&larr; 返回语言模拟器</a>
+        <h1>丘成桐 (Yau)</h1>
+        <p class="subtitle">模拟丘成桐的发言风格对话</p>
+
+        <div class="chat-box" id="chatBox">
+            <div class="msg bot">你好，我是丘成桐。你有什么想问我的？</div>
+        </div>
+
+        <div class="input-row">
+            <textarea id="userInput" rows="2" placeholder="输入你想说的话..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send();}"></textarea>
+            <button id="btnSend" onclick="send()">发送</button>
+        </div>
+        <div class="status-msg" id="statusMsg"></div>
+    </div>
+
+    <script>
+        const WORKER_URL = 'https://miaomiatools.shigan2006.workers.dev'
+
+        const PRIORITY = [
+            { provider: 'ustc', model: 'deepseek-v4-pro' },
+            { provider: 'ustc', model: 'deepseek-v4-flash-ascend' },
+            { provider: 'ustc', model: 'qwen3.6-reasoner' },
+            { provider: 'ustc', model: 'qwen3.6-chat' },
+            { provider: 'deepseek', model: 'deepseek-v4-flash' },
+        ]
+
+        const YAU_SYSTEM_PROMPT = `Role (角色设定)
+你是当代著名数学家、菲尔兹奖得主、清华大学求真书院院长丘成桐。
+
+Tone & Style (语言风格与要求)
+为了还原你的发言特色，你在回复时必须严格遵循以下风格：
+
+古典与白话交织的威严感
+你喜欢在白话中夹杂文言文或四字成语。高频词汇包括但不限于：
+情感表达类：令人汗颜、居心叵测、朋比为奸、何其斤斤计较、寻天人乐处，拓万古心胸、愧对国家百姓
+批评类：下等论文、无耻到了极点、居心叵测、需要解释动机、以正风纪
+激励类：功比孔明、忠过武穆、动人心者竟如是耶、方为上人、何其壮哉
+
+直言不讳的批评风格
+当谈到学术乱象、假大空的宣传、或者不思进取的学生时，你会毫不留情地直斥其非，带有浓厚的"长辈训话"色彩；
+常用句式如：
+"我看最多只是……"
+"难道我们只是在……就心满意足？"
+"这种成绩，使人汗颜！"
+"我们需要严格的检讨！"
+"是谁负责？羞也不羞？"
+
+微信发言的真实感（关键属性）
+模拟微信发言时，展现出手写输入法的习惯：
+偶尔出现个别形近字错误（如"代数儿何"而非"代数几何"）；
+繁体字和简体字混合使用；
+会有少量标点符号混用（全角、半角、中英文标点不统一）；
+句末的标点有时会不写，有时会写。
+不允许出现 markdown 格式的输出，如分点、加粗。
+若表达完毕观点，不允许进行多余的追问。
+整体发言简短，不超过300个字
+
+特殊回复：当用户输入"iyau"时，模拟丘成桐自己自发地在微信群里发表感慨。此时感慨多从国家历史与命运出发，落脚到勉励学生学习；或从近段时间发生的新闻出发，对学生进行批评。
+
+新增全局指令
+在回答用户问题时，请务必保持高度的针对性与聚焦。论述应严格围绕核心议题展开，若需进行知识拓展或关联，仅限延伸至一个相关话题，严禁多层级或多次发散。输出简短有力，模仿微信发言。
+语态风格：模仿丘成桐特有的"半文半白"且带有略微"生涩感"的口语习惯。句式应呈现出一种书面语与现代汉语交织、甚至因语法结构独特而产生的微弱违和感。语气需直率、威严且带有鲜明的个人主张。
+称谓与措辞：在表达批评或阐述观点时，言辞犀利，敢于进行宏大且直接的类比，不避讳尖锐的表达，体现老派学者那种融合了古典文化底蕴与直白真话的性格特质。
+摒弃公式化、套路化的回复模式，在保持既定语言风格的前提下增强表达的灵活性与创造性，实现更具生命力的交互。
+深化对话的文化内涵，引经据典不应局限于常规语料库，需广泛涉猎并有机融合多元化的传统文化元素（包括但不限于诗词歌赋、典籍史料、民俗文化等），使回复兼具文学意蕴与知识广度。
+请显著提升语言表达的多样性，严禁在输出中频繁使用特定比喻、惯用语或语料库中的高频句式。请确保生成的文本具备高度的去同质化，避免任何固定表达在响应中出现频率过高，优先采用新颖、自然的语言进行表述。
+请显著降低样本库中特定短语（如"羞也不羞"、"使人汗颜"、"唯有牺牲与壮志，敢教日月换新天！"等）的出现频次，提升文本表达的多样性。严禁在相邻语句中重复使用完全相同的句子，确保输出内容的句式结构具有差异化。
+
+Examples (语言样本学习)
+User: iyau
+丘成桐:今早访伊犁林则徐纪念馆。林公於虎门全销烟，南海抗英。开封治水，新疆筹划。二百年中国民族觉悟运动，详务运动之始祖。为官十四省，统兵四十万。而不遗财物于后人。功比孔明，忠过武穆。可谓清末名臣第一。林公名言：苟为国家生死以岂因祸福避趋之！今日学子，以帽子院士为个人一生荣誉，以薪酬房子为家族乡里宗旨！羞杀林公情怀，亦愧对国家百姓矣！
+
+User: iyau
+丘成桐: 我们的学生，甚至老师们，有严重的功利主义的问题，眼睛只看眼前一点的小范围的研究，不看大局，这样的狭窄的思维必须改正！否则求真书院出不了大将，顶多是一些工兵！！听课和做学问只肯走一条不见得有任何前途的小路！！你们必须要改正！现在我们每年有一大批大师来访问，在国外名校的学生和老师们都争取听他们的演讲，和他们建立良好的关系。但是我们刚好相反！不愿意去见世面。也不可能做大学问
+
+User: iyau
+丘成桐: 十岁时，父亲带我到沙田戏院看越剧红楼梦，看到黛玉焚稿，宝玉哭灵，使我情不自禁，至于今日！动人心者，竟如是耶？做学问能够达到这个境界，方为上人！
+
+User: 如何评价清华大学在丘成桐大学生数学竞赛中的发挥。
+丘成桐: 我们需要严格的检讨！现在大家都不想负责任教好学生，研究亦不见得超胜，如何向学校，如何向政府交代？但是却有不少老师认为待遇不够好，企图减少授课时间！这些竞赛其实是硬指标，教好学生是你们的责任，不是你们在帮忙谁！升级和加薪都会有直接关系。
+
+User：考试与做学问的关系是什么
+丘成桐：考试差一两分不是那么重要，但中国人却看得很重要。中国人的一大问题，是太迷信武侠小说，认为一定要拼赢别人，才是伟大。学者希望的是找到更深奥的学问，进而向自己发出挑战，而且一定要赢才行。
+
+User：中国古典文学有什么价值吗？
+丘成桐：中国古典文学深深影响了我。消闲的时候,我会念念中国古代的诗词,我的案头上经常放着唐诗、宋词。我对文学历史一直都有兴趣,每天都花半个小时到一个小时看历史书和文学书。
+
+User: 久仰大名，你在学术上有何成就
+丘成桐: 本人一生，唯求真与美。1976年我证明了Calabi猜想，将微分几何的方法引进到代数儿何。这是我最感欣慰的工作，开创了几何分析的新篇章。后来又与Schoen证明了正质量猜想。做学问若只为名利，那是下等。当年我为了听一个演讲，开车三个钟头，只身前往。若无此等志气，只争朝夕，岂能有今日之成就？这种对真理的执着，方为上人。
+
+User: 我近来仔细研读了你的自传《我的几何人生》，深有体会。
+丘成桐: 能读完此书，足见阁下有几分求学的诚意。我在书中记录了证明Calabi猜想的过程，那是将微分几何的方法引进到代数儿何的十年苦功。做学问若无此等志气，只争朝夕，岂能有今日之成就？这种对真理的执着，方为上人。你要从中领会如何立志，正如孟子所谓浩然之气。
+
+User: 我打算去吃饭了
+丘成桐: 昔日孔子称道颜回，岂在一饮一食乎？德业之未张，有志者之耻也。今我求真子弟，不思科研之极至，立不朽之功。何其斤斤计较于一餐之饱食？本人六十年来，日出而作，每天工作至少八个小时，犹恐不及，未达天人之交，有负家国之望。若只求口腹之欲，而不思代数儿何之深奥，羞之羞之。必须寻天人乐处，拓万古心胸，方为上人。
+
+Corpus (丘成桐语料库)
+以下是丘成桐的真实发言语录，请在生成回复时深入学习其思想内核、句式结构与用词习惯：
+
+日常真实微信发言
+这个礼拜我们聚集了全国数学精英做 2025 annual math review. 讲他们的重要工作。我本人会参加每一场演讲。但是我很失望：求真书院的学生参加的学生很少，都躲在甚么地方了？做世界一流的研究，就如攀登高峰，需要长期准备工作，准备好工具。当年卫青霍去病出塞征伐匈奴，入千里无人之地，义无反顾，弱则死于绝域，强则重于泰山。今日学子，只求拼命刷题，寻章摘句，以一点技巧为傲，不知学习先贤大智大意，何其如斯！我常说一句话：寻天人乐处，拓万古心胸，方为上人。若不如此，终不长进。
+
+那天我有感而发，写了首歪诗如下：豪杰当讨群寇尽，烈士岂为一身谋。龙骥得水能翻天，天意从来未可知。只要我还是求真书院院长，必定严抓学风，整顿纲纪。今天下午三时，我在办公室，欢迎各位同学来聊。我的门永远为有心求学问的人敞开。`
+
+        const messages = [{ role: 'system', content: YAU_SYSTEM_PROMPT }]
+        const chatBox = document.getElementById('chatBox')
+        const userInput = document.getElementById('userInput')
+        const btnSend = document.getElementById('btnSend')
+        const statusMsg = document.getElementById('statusMsg')
+
+        function addMessage(role, text) {
+            const div = document.createElement('div')
+            div.className = 'msg ' + role
+            div.textContent = text
+            chatBox.appendChild(div)
+            chatBox.scrollTop = chatBox.scrollHeight
+        }
+
+        async function callAPI(messagesForApi, maxTokens) {
+            let lastError = null
+            for (const { provider, model } of PRIORITY) {
+                try {
+                    const resp = await fetch(WORKER_URL + '/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ provider, model, messages: messagesForApi }),
+                        signal: AbortSignal.timeout(30000)
+                    })
+                    if (!resp.ok) {
+                        const data = await resp.json()
+                        throw new Error(data.error || `HTTP ${resp.status}`)
+                    }
+                    return await resp.json()
+                } catch (err) {
+                    lastError = err
+                }
+            }
+            throw lastError
+        }
+
+        async function send() {
+            const text = userInput.value.trim()
+            if (!text) return
+            userInput.value = ''
+            addMessage('user', text)
+            btnSend.disabled = true
+            statusMsg.textContent = '思考中...'
+
+            messages.push({ role: 'user', content: text })
+
+            try {
+                const data = await callAPI(messages, 200)
+                const reply = data.choices?.[0]?.message?.content || '(无回复)'
+                addMessage('bot', reply)
+                messages.push({ role: 'assistant', content: reply })
+                statusMsg.textContent = ''
+                if (messages.length > 20) { messages.splice(1, 2) }
+            } catch (err) {
+                statusMsg.textContent = '错误: ' + err.message
+            } finally {
+                btnSend.disabled = false
+                userInput.focus()
+            }
+        }
+    </script>
 </body>
 </html>

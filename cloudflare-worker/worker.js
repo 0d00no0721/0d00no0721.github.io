@@ -86,6 +86,9 @@ export default {
     }
 
     try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 15000)
+
       const resp = await fetch(`${providerConfig.baseUrl}/v1/chat/completions`, {
         method: 'POST',
         headers: {
@@ -93,9 +96,23 @@ export default {
           'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       })
+      clearTimeout(timeout)
 
-      const data = await resp.json()
+      const text = await resp.text()
+      let data
+      try {
+        data = JSON.parse(text)
+      } catch {
+        return new Response(JSON.stringify({
+          error: `上游 API 返回非 JSON 响应 (${resp.status})`,
+          detail: text.slice(0, 500),
+        }), {
+          status: 502,
+          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        })
+      }
 
       if (!resp.ok) {
         return new Response(JSON.stringify({
@@ -112,7 +129,7 @@ export default {
         headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
       })
     } catch (err) {
-      return new Response(JSON.stringify({ error: `请求上游 API 失败: ${err.message}` }), {
+      return new Response(JSON.stringify({ error: `请求上游 API 失败: ${err.name === 'AbortError' ? '连接超时 (15s)' : err.message}` }), {
         status: 502,
         headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
       })
